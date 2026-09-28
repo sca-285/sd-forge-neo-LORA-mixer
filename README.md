@@ -1,4 +1,4 @@
-# LoRA Mixer
+# Stable Diffusion LoRA Mixer for Forge Classic (Neo), Forge, reForge
 
 A LoRA list for Forge, reForge and Forge Classic (Neo), in the spirit of
 rgthree's **Power Lora Loader** for ComfyUI, with **block weights** built in:
@@ -20,7 +20,7 @@ Generating never edits your prompt box.
 WebUI → Extensions → Install from URL → this repo → Apply and restart.
 
 ```bash
-git clone [https://github.com/sca-285/impact-adetailer.git extensions/impact-adetailer](https://github.com/sca-285/sd-forge-neo-LORA-mixer.git)
+git clone https://github.com/sca-285/sd-forge-neo-LORA-mixer.git
 ```
 
 ## Using it
