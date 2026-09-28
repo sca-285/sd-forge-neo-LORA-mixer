@@ -100,7 +100,7 @@ preset name works there too (`lbw=No text encoder`). They apply to SD 1.x and
 SDXL models; with other models (Flux, Qwen, …) the LoRA is used without them
 and the console says so.
 
-## On and off: who holds the LoRAs
+## On and off mechanism
 
 The accordion's checkbox decides where your LoRAs live.
 
