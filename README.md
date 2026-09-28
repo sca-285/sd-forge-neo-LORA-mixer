@@ -12,6 +12,17 @@ therefore carries exactly what a typed tag would give: the tags in the prompt,
 `Lora hashes` in PNG info, and so Civitai and other sites recognise the LoRAs.
 Generating never edits your prompt box.
 
+![asset1](https://iili.io/n5y8eJj.png))
+![asset2](https://iili.io/n5y8k5x.png)))
+
+## Install
+
+WebUI → Extensions → Install from URL → this repo → Apply and restart.
+
+```bash
+git clone [https://github.com/sca-285/impact-adetailer.git extensions/impact-adetailer](https://github.com/sca-285/sd-forge-neo-LORA-mixer.git)
+```
+
 ## Using it
 
 ```
@@ -136,7 +147,7 @@ style.css
 - Style / content blocks: *Implicit Style-Content Separation using B-LoRA*,
   Yarden Frenkel, Yael Vinker, Ariel Shamir, Daniel Cohen-Or (ECCV 2024).
 
-Thanks also to **Claude**, Anthropic's AI assistant, for help building this
+Thanks also to **Claude**, for help building this
 extension.
 
 ## License
