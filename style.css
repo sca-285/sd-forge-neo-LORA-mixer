@@ -1,0 +1,332 @@
+/* LoRA Mixer. Colours come from Gradio's variables, so light, dark and
+   themes follow. Selectors are doubled (.ls-root .ls-*) where themes restyle
+   every button. */
+
+.lora-mixer-state { display: none !important; }
+
+.lora-mixer-mount.ls-mount-away::before {
+    content: "Shown in the floating window. Untick \"Floating window\" to bring it back here.";
+    display: block;
+    padding: 8px 2px;
+    font-size: var(--text-sm, 13px);
+    opacity: 0.7;
+}
+
+.ls-root {
+    --ls-border: var(--border-color-primary, rgba(128, 128, 128, 0.35));
+    --ls-bg: var(--background-fill-primary, transparent);
+    --ls-bg2: var(--background-fill-secondary, rgba(128, 128, 128, 0.08));
+    --ls-text: var(--body-text-color, inherit);
+    --ls-sub: var(--body-text-color-subdued, rgba(128, 128, 128, 0.9));
+    --ls-accent: var(--color-accent, #7aa2ff);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--ls-text);
+    font-size: var(--text-md, 14px);
+}
+
+/* ---- buttons */
+.ls-root .ls-btn,
+.ls-float .ls-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 32px !important;
+    height: 32px;
+    padding: 0 8px !important;
+    border: 1px solid var(--ls-border, rgba(128, 128, 128, 0.35));
+    border-radius: 8px;
+    background: var(--button-secondary-background-fill, transparent) !important;
+    color: var(--button-secondary-text-color, inherit);
+    cursor: pointer;
+    flex: none;
+}
+.ls-root .ls-btn:hover,
+.ls-float .ls-btn:hover { border-color: var(--ls-accent, #7aa2ff); }
+.ls-root .ls-btn svg,
+.ls-float .ls-btn svg,
+.ls-grip svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.ls-grip svg { fill: currentColor; stroke: none; }
+.ls-root .ls-btn.ls-active { border-color: var(--ls-accent); color: var(--ls-accent); }
+.ls-root .ls-add { font-weight: 600; }
+.ls-bar { display: flex; align-items: center; gap: 6px; }
+.ls-spacer { flex: 1; }
+.ls-count { font-size: var(--text-sm, 13px); color: var(--ls-sub); }
+
+/* ---- rows */
+.ls-list { display: flex; flex-direction: column; gap: 4px; }
+.ls-empty { padding: 10px 4px; color: var(--ls-sub); font-size: var(--text-sm, 13px); }
+.ls-row {
+    border: 1px solid var(--ls-border);
+    border-radius: 8px;
+    background: var(--ls-bg2);
+}
+.ls-row-main {
+    display: flex;
+    flex-wrap: wrap;             /* narrow panels: weights and actions drop to a second line */
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 4px 6px;
+    min-height: 42px;
+}
+.ls-row.ls-off .ls-thumb,
+.ls-row.ls-off .ls-name,
+.ls-row.ls-off .ls-weights { opacity: 0.45; }
+.ls-row.ls-dragging { opacity: 0.4; }
+.ls-row.ls-dropzone { border-color: var(--ls-accent); }
+.ls-grip { display: inline-flex; cursor: grab; color: var(--ls-sub); flex: none; }
+
+.ls-thumb {
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    overflow: hidden;
+    flex: none;
+    background: var(--ls-bg);
+    border: 1px solid var(--ls-border);
+}
+.ls-thumb img { width: 100% !important; height: 100% !important; object-fit: cover; display: block; margin: 0 !important; }
+
+.ls-root .ls-name {
+    flex: 1 1 90px;
+    min-width: 90px !important;
+    padding: 0 4px !important;
+    background: none !important;
+    border: none !important;
+    color: inherit;
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    font-size: var(--text-md, 14px);
+}
+.ls-root .ls-name:hover { color: var(--ls-accent); }
+.ls-root .ls-name.ls-missing { color: var(--error-text-color, #e5484d); text-decoration: line-through; }
+
+.ls-weights { display: inline-flex; gap: 8px; flex: none; }
+.ls-weight { display: inline-flex; align-items: center; gap: 2px; }
+.ls-wlabel { font-size: var(--text-xs, 11px); color: var(--ls-sub); margin-right: 2px; }
+.ls-root .ls-weight .ls-btn { min-width: 28px !important; width: 28px; height: 32px; padding: 0 !important; }
+.ls-root .ls-num {
+    width: 58px;
+    height: 32px;
+    text-align: center;
+    border: 1px solid var(--ls-border);
+    border-radius: 6px;
+    background: var(--input-background-fill, var(--ls-bg));
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    padding: 0 2px;
+}
+.ls-root .ls-num::-webkit-inner-spin-button { display: none; }
+.ls-actions { display: inline-flex; gap: 4px; flex: none; }
+.ls-root .ls-remove:hover { color: var(--error-text-color, #e5484d); border-color: currentColor; }
+
+/* switch (sizes forced: some themes give every label a minimum width) */
+.ls-root .ls-switch,
+.ls-float .ls-switch {
+    position: relative !important;
+    display: inline-block !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    max-width: 34px !important;
+    height: 20px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex: none;
+    cursor: pointer;
+}
+.ls-root .ls-switch input,
+.ls-float .ls-switch input {
+    position: absolute !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+}
+.ls-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    background: var(--ls-border, rgba(128, 128, 128, 0.35));
+    transition: background 0.15s;
+}
+.ls-slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    top: 3px;
+    border-radius: 50%;
+    background: var(--background-fill-primary, #fff);   /* contrasts with the accent in light and dark */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: left 0.15s;
+}
+.ls-switch input:checked + .ls-slider { background: var(--ls-accent, #7aa2ff); }
+.ls-switch input:checked + .ls-slider::before { left: calc(100% - 17px); }
+
+/* trigger words */
+.ls-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px 48px; }
+.ls-root .ls-chip {
+    min-width: 0 !important;
+    height: 26px;
+    padding: 0 10px !important;
+    border: 1px solid var(--ls-border);
+    border-radius: 13px;
+    background: var(--ls-bg) !important;
+    color: inherit;
+    font-size: var(--text-sm, 13px);
+    cursor: pointer;
+}
+.ls-root .ls-chip:hover { border-color: var(--ls-accent); }
+.ls-root .ls-chip.ls-chip-used { opacity: 0.5; }
+.ls-root .ls-chip.ls-chip-all { font-weight: 600; }
+
+/* ---- picker */
+.ls-picker {
+    position: absolute;
+    top: 38px;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    max-height: 420px;
+    border: 1px solid var(--ls-border);
+    border-radius: 10px;
+    background: var(--background-fill-primary, #1f1f23);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+.ls-picker[hidden] { display: none; }
+.ls-picker-top { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--ls-border); }
+.ls-root .ls-search {
+    flex: 1;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--ls-border);
+    border-radius: 8px;
+    background: var(--input-background-fill, transparent);
+    color: inherit;
+}
+.ls-picker-list { overflow: auto; padding: 4px; }
+.ls-root .ls-pick {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0 !important;
+    padding: 4px 6px !important;
+    border: none !important;
+    border-radius: 8px;
+    background: none !important;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.ls-root .ls-pick:hover { background: var(--ls-bg2) !important; }
+.ls-root .ls-pick.ls-used { opacity: 0.5; }
+.ls-pick .ls-thumb { width: 40px; height: 40px; }
+.ls-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.ls-pick-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ls-pick-sub { font-size: var(--text-xs, 11px); color: var(--ls-sub); }
+
+/* ---- floating window */
+.ls-float {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    min-width: 320px;
+    min-height: 160px;
+    resize: both;
+    overflow: hidden;
+    border: 1px solid var(--border-color-primary, rgba(128, 128, 128, 0.35));
+    border-radius: 12px;
+    background: var(--background-fill-primary, #1f1f23);
+    color: var(--body-text-color, inherit);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    font-family: var(--font, "Source Sans Pro", ui-sans-serif, system-ui, sans-serif);
+    font-size: var(--text-md, 14px);
+}
+.ls-float[hidden] { display: none; }
+.ls-float-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 12px;
+    border-bottom: 1px solid var(--border-color-primary, rgba(128, 128, 128, 0.35));
+    cursor: move;
+    user-select: none;
+}
+.ls-float-title { font-weight: 600; }
+.ls-float-body { flex: 1; overflow: auto; padding: 8px; }
+.ls-float.ls-float-disabled .ls-float-body { opacity: 0.55; }
+
+/* ---- block weights */
+.ls-root .ls-blocks-btn.ls-open { background: var(--ls-bg) !important; }
+.ls-blocks {
+    margin: 0 8px 8px 8px;
+    padding: 8px;
+    border: 1px solid var(--ls-border);
+    border-radius: 8px;
+    background: var(--ls-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ls-blocks-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ls-blocks-title { font-weight: 600; font-size: var(--text-sm, 13px); }
+.ls-seg { display: inline-flex; border: 1px solid var(--ls-border); border-radius: 8px; overflow: hidden; }
+.ls-root .ls-seg-btn {
+    min-width: 0 !important;
+    height: 28px;
+    padding: 0 10px !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: none !important;
+    color: inherit;
+    font-size: var(--text-sm, 13px);
+    cursor: pointer;
+}
+.ls-root .ls-seg-btn.ls-active { background: var(--ls-accent) !important; color: var(--button-primary-text-color, #fff); }
+.ls-root .ls-reset { height: 28px; font-size: var(--text-sm, 13px); }
+.ls-note { font-size: var(--text-sm, 13px); color: var(--ls-sub); }
+.ls-blocks .ls-presets { padding: 0; }
+.ls-root .ls-chip.ls-chip-on { border-color: var(--ls-accent); color: var(--ls-accent); }
+.ls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.ls-root .ls-cell {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+.ls-cell-name { font-size: var(--text-xs, 11px); color: var(--ls-sub); text-align: center; }
+.ls-root .ls-cell-num {
+    width: 100%;
+    height: 30px;
+    text-align: center;
+    border: 1px solid var(--ls-border);
+    border-radius: 6px;
+    background: var(--input-background-fill, transparent);
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+}
+.ls-root .ls-cell.ls-cell-changed .ls-cell-num { border-color: var(--ls-accent); }
+.ls-root .ls-cell.ls-cell-changed .ls-cell-name { color: var(--ls-accent); }
