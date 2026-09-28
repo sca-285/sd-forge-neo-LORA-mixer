@@ -43,8 +43,10 @@ def _family():
     differently still gets block weights.
     """
     try:
-        from modules import shared
-        m = shared.sd_model
+        # model_data, not shared.sd_model: on reForge reading that from the UI
+        # can start loading a checkpoint.
+        from modules import sd_models
+        m = sd_models.model_data.sd_model
     except Exception:
         return None
     if m is None:
