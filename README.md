@@ -12,8 +12,8 @@ therefore carries exactly what a typed tag would give: the tags in the prompt,
 `Lora hashes` in PNG info, and so Civitai and other sites recognise the LoRAs.
 Generating never edits your prompt box.
 
-![asset1](https://iili.io/n5y8eJj.png))
-![asset2](https://iili.io/n5y8k5x.png)))
+![asset1](https://iili.io/n5y8eJj.png)
+![asset2](https://iili.io/n5y8k5x.png)
 
 ## Install
 
