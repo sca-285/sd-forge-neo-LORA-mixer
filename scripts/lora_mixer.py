@@ -40,7 +40,8 @@ def on_app_started(_demo, app):
     from fastapi import Body, Query, Response
 
     def lora_list(refresh: bool = Query(False)):
-        return {"items": catalog.build(refresh=refresh)}
+        items = catalog.build(refresh=refresh)
+        return {"items": items, "complete": catalog.complete}
 
     def thumb(k: str = Query(...)):
         got = catalog.thumbnail(k)

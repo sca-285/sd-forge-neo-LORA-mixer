@@ -18,6 +18,7 @@ import json
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
 
@@ -25,6 +26,8 @@ from . import blocks
 
 _lock = threading.Lock()
 _cache = None
+_last_good = None            # the last complete list, served while the WebUI rescans
+complete = True              # whether the list build() returned last was complete
 _thumb_paths = {}            # key -> preview image path; the only files /thumb serves
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
@@ -160,10 +163,13 @@ def _thumb_key(path):
     return hashlib.sha1(os.path.abspath(path).encode("utf8", "surrogateescape")).hexdigest()[:20]
 
 
-def _items(page):
+def _networks(page):
     import sys
     # The page's own module has the host's `networks` imported.
-    networks = getattr(sys.modules.get(type(page).__module__), "networks", None)
+    return getattr(sys.modules.get(type(page).__module__), "networks", None)
+
+
+def _items_once(page, networks):
     if networks is not None:
         names = list(networks.available_networks)
     else:
@@ -178,12 +184,35 @@ def _items(page):
             item = None
         if item:
             items.append(item)
-    return items
+    return names, items
+
+
+def _items(page):
+    """The page's items, read when the WebUI's LoRA list is not being rebuilt.
+
+    The Lora extension's list_available_networks() empties the list and then
+    rescans the folders (sidebar refresh, an unknown name in a prompt, ...);
+    read during that and the list comes back empty or cut short. So: wait for
+    a list, and read again when it changed or lost items while being read.
+    """
+    networks = _networks(page)
+    names, items = [], []
+    for attempt in range(8):
+        before = len(networks.available_networks) if networks is not None else None
+        if before == 0:
+            time.sleep(1.0)
+            continue
+        names, items = _items_once(page, networks)
+        after = len(networks.available_networks) if networks is not None else None
+        if names and before == after == len(names) and len(items) >= 0.98 * len(names):
+            return items, True
+        time.sleep(0.5 + attempt * 0.5)
+    return items, False
 
 
 def build(refresh=False):
     """[{name, tag, folder, preview, weight, triggers, sd, hash, arch, mt}], cached."""
-    global _cache, _thumb_paths
+    global _cache, _last_good, complete
     with _lock:
         if _cache is not None and not refresh:
             return _cache
@@ -198,10 +227,10 @@ def build(refresh=False):
         from modules import shared
         default_w = float(getattr(shared.opts, "extra_networks_default_multiplier", 1.0) or 1.0)
         roots = _root_dirs()
-        items = _items(page)
+        items, ok = _items(page)
 
         old_meta = _load_meta()
-        paths = [it.get("filename") or "" for it in items]
+        paths = [os.path.abspath(it["filename"]) if it.get("filename") else "" for it in items]
         with ThreadPoolExecutor(max_workers=min(16, (os.cpu_count() or 4) * 2)) as pool:
             metas = list(pool.map(lambda p: _file_meta(p, old_meta.get(p)) if p else {}, paths))
         new_meta = {p: m for p, m in zip(paths, metas) if p}
@@ -241,19 +270,45 @@ def build(refresh=False):
                 "mt": int((meta.get("m") or 0) // 1_000_000_000),
             })
         out.sort(key=lambda x: (x["folder"].lower(), x["name"].lower()))
-        _thumb_paths = thumbs
-        _cache = out
+        _thumb_paths.update(thumbs)
+        # An incomplete list (the WebUI was rescanning its folders) is never kept:
+        # the last complete one is served instead, or this one until the next request.
+        if ok and out:
+            _cache = _last_good = out
+            complete = True
+            return out
+        _cache = None
+        complete = False
+        print(f"[LoRA Mixer] the WebUI was rescanning the LoRA folders; read {len(out)} LoRAs, will read again.")
+        if _last_good is not None:
+            return _last_good
         return out
 
 
+_MODEL_EXT = (".safetensors", ".pt", ".ckpt")
+
+
 def warm_up():
-    """Build the list in the background so the first Add LoRA opens at once."""
+    """Read the LoRA files' headers and .civitai.info in the background, so the
+    first Add LoRA does not wait for them. Only files are read here: the list
+    itself comes from the WebUI when it is asked for, never while it starts."""
     def run():
         try:
-            build()
+            roots = _root_dirs()
+            paths = []
+            for root in roots:
+                for dirpath, _dirs, files in os.walk(root, followlinks=True):
+                    paths += [os.path.join(dirpath, f) for f in files if f.lower().endswith(_MODEL_EXT)]
+            old = _load_meta()
+            with ThreadPoolExecutor(max_workers=min(16, (os.cpu_count() or 4) * 2)) as pool:
+                metas = list(pool.map(lambda p: _file_meta(p, old.get(p)), paths))
+            new = dict(old)
+            new.update(zip(paths, metas))
+            if new != old:
+                _save_meta(new)
         except Exception as e:
-            print(f"[LoRA Mixer] could not read the LoRA list: {e}")
-    threading.Thread(target=run, name="lora-mixer-catalog", daemon=True).start()
+            print(f"[LoRA Mixer] could not read the LoRA files: {e}")
+    threading.Thread(target=run, name="lora-mixer-warm-up", daemon=True).start()
 
 
 def thumbnail(key):

@@ -27,6 +27,7 @@
     let catalog = null;          // [{name, tag, folder, preview, weight, triggers, sd, hash}]
     let blockInfo = null;        // {family, layouts: {fam: [...]}, labels, groups, presets: [{name, about, values}], note}
     let catalogPromise = null;
+    let catalogPartial = false;  // the server read the list while the WebUI was rescanning
     const stacks = {};           // tab -> Stack
 
     const app = () => (typeof gradioApp === "function" ? gradioApp() : document);
@@ -153,11 +154,18 @@
     }
 
     function loadCatalog(refresh) {
-        if (catalog && !refresh) return Promise.resolve(catalog);
-        if (catalogPromise && !refresh) return catalogPromise;
+        // An empty list is never kept: the WebUI may have been rescanning its folders.
+        // An empty or partial list is never kept: the WebUI may have been rescanning its folders.
+        const stale = catalog && (!catalog.length || catalogPartial);
+        if (catalog && !stale && !refresh) return Promise.resolve(catalog);
+        if (catalogPromise && !refresh && !stale) return catalogPromise;
         catalogPromise = fetch("./lora-mixer/list" + (refresh ? "?refresh=true" : ""))
             .then((r) => r.json())
-            .then((d) => (catalog = indexCatalog(d.items || [])))
+            .then((d) => {
+                catalog = indexCatalog(d.items || []);
+                catalogPartial = d.complete === false;
+                return catalog;
+            })
             .catch(() => (catalog = indexCatalog([])));
         return catalogPromise;
     }
@@ -1008,7 +1016,10 @@
             (app().querySelector(".gradio-container") || document.body).append(this.node);
             this.restore();
             this.drag(head);
-            new ResizeObserver(() => this.remember()).observe(this.node);
+            new ResizeObserver(() => {
+                this.node.style.setProperty("--ls-float-h", this.node.clientHeight + "px");
+                this.remember();
+            }).observe(this.node);
         }
 
         restore() {

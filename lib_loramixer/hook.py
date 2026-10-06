@@ -101,18 +101,14 @@ def _family():
     """'sdxl', 'sd1' or a transformer family ('flux', 'anima', ...) for the loaded
     model, None for anything else.
 
-    The model's own flags first; failing those, the UNet's shape (SDXL has 9
-    input blocks, SD 1.x / 2.x have 12), so a WebUI that names its flags
-    differently still gets block weights. A transformer's layout is read from
-    the blocks the model has.
+    The model's structure first: a transformer's layout is read from the blocks
+    it has, and a UNet's input blocks tell SDXL (9) from SD 1.x / 2.x (12). The
+    flags come last: reForge marks every model that is not SDXL / SD2 / SD3 as
+    is_sd1, Flux and Chroma included.
     """
     m, unet = _diffusion_model()
     if m is None:
         return None
-    if getattr(m, "is_sdxl", False):
-        return "sdxl"
-    if getattr(m, "is_sd1", False) or getattr(m, "is_sd2", False):
-        return "sd1"
     blocks_in = getattr(unet, "input_blocks", None)
     if blocks_in is not None and getattr(unet, "output_blocks", None) is not None:
         n = len(blocks_in)
@@ -120,7 +116,16 @@ def _family():
             return "sdxl"
         if n == 12:
             return "sd1"
-    return _dit_family(unet)
+    fam = _dit_family(unet)
+    if fam is not None:
+        return fam
+    if unet is not None and (_is_nunchaku(unet) or blocks_in is None):
+        return None              # a transformer we cannot weight; not an SD model either
+    if getattr(m, "is_sdxl", False):
+        return "sdxl"
+    if getattr(m, "is_sd1", False) or getattr(m, "is_sd2", False):
+        return "sd1"
+    return None
 
 
 def current_family():

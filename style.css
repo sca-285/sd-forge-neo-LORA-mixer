@@ -404,3 +404,6 @@
 .ls-root .ls-group-all { width: 64px; height: 26px; }
 .ls-grid.ls-grid-dense { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; }
 .ls-grid-dense .ls-cell-num { height: 26px; }
+
+/* In the floating window the picker fits the window instead of spilling out of it. */
+.ls-float .ls-picker { height: max(200px, calc(var(--ls-float-h, 460px) - 104px)); min-height: 0; }
