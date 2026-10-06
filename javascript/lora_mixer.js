@@ -190,7 +190,10 @@
     const FAVS_KEY = "lora-mixer-favorites";
     const RECENT_KEY = "lora-mixer-recent";
     const RECENT_MAX = 60;
-    const prefs = Object.assign({ folder: "", sort: "folder", view: "list", scope: "all" }, loadJSON(PREFS_KEY, {}));
+    // Sort and view are remembered; the folder and All / ★ / Recent only for this
+    // page, so a filter picked once does not hide most LoRAs after a reload.
+    const saved = loadJSON(PREFS_KEY, {});
+    const prefs = { folder: "", scope: "all", sort: saved.sort || "folder", view: saved.view || "list" };
     const favorites = new Set(loadJSON(FAVS_KEY, []));
     let recent = loadJSON(RECENT_KEY, []);
 
@@ -266,7 +269,7 @@
             this.viewBtn = iconButton(prefs.view === "grid" ? "list" : "grid", "Grid / list view", "ls-view");
             this.viewBtn.addEventListener("click", () => {
                 prefs.view = prefs.view === "grid" ? "list" : "grid";
-                saveJSON(PREFS_KEY, prefs);
+                saveJSON(PREFS_KEY, { sort: prefs.sort, view: prefs.view });
                 this.viewBtn.innerHTML = ICON[prefs.view === "grid" ? "list" : "grid"];
                 this.painted = "";
                 this.list.scrollTop = 0;
@@ -290,7 +293,7 @@
                 b.dataset.scope = id;
                 b.addEventListener("click", () => {
                     prefs.scope = id;
-                    saveJSON(PREFS_KEY, prefs);
+                    saveJSON(PREFS_KEY, { sort: prefs.sort, view: prefs.view });
                     this.filter();
                     this.search.focus();
                 });
@@ -300,7 +303,7 @@
             this.folderSel.title = "Folder";
             this.folderSel.addEventListener("change", () => {
                 prefs.folder = this.folderSel.value;
-                saveJSON(PREFS_KEY, prefs);
+                saveJSON(PREFS_KEY, { sort: prefs.sort, view: prefs.view });
                 this.filter();
             });
             this.sortSel = el("select", "ls-select ls-sort");
@@ -313,7 +316,7 @@
             this.sortSel.value = prefs.sort;
             this.sortSel.addEventListener("change", () => {
                 prefs.sort = this.sortSel.value;
-                saveJSON(PREFS_KEY, prefs);
+                saveJSON(PREFS_KEY, { sort: prefs.sort, view: prefs.view });
                 this.filter();
             });
             filters.append(this.scope, this.folderSel, this.sortSel);

@@ -197,20 +197,17 @@
 .ls-root .ls-chip.ls-chip-all { font-weight: 600; }
 
 /* ---- picker (a virtual list: only the rows in view are in the page) */
+/* In the page flow, below the bar, pushing the rows down: as an overlay it is
+   cut off by containers that hide overflow (Gradio 4's .styler in Neo, themes). */
 .ls-picker {
-    position: absolute;
-    top: 38px;
-    left: 0;
-    right: 0;
-    z-index: 50;
+    position: relative;
     display: flex;
     flex-direction: column;
-    height: min(70vh, 600px);
+    height: min(60vh, 520px);
     min-height: 260px;
     border: 1px solid var(--ls-border);
     border-radius: 10px;
     background: var(--background-fill-primary, #1f1f23);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     overflow: hidden;
 }
 .ls-picker[hidden] { display: none; }
@@ -368,7 +365,7 @@
     font-size: var(--text-sm, 13px);
     cursor: pointer;
 }
-.ls-root .ls-seg-btn.ls-active { background: var(--ls-accent) !important; color: var(--button-primary-text-color, #fff); }
+.ls-root .ls-seg-btn.ls-active { background: var(--ls-accent) !important; color: #fff !important; }
 .ls-root .ls-reset { height: 28px; font-size: var(--text-sm, 13px); }
 .ls-note { font-size: var(--text-sm, 13px); color: var(--ls-sub); }
 .ls-blocks .ls-presets { padding: 0; }
@@ -406,4 +403,4 @@
 .ls-grid-dense .ls-cell-num { height: 26px; }
 
 /* In the floating window the picker fits the window instead of spilling out of it. */
-.ls-float .ls-picker { height: max(200px, calc(var(--ls-float-h, 460px) - 104px)); min-height: 0; }
+.ls-float .ls-picker { height: max(200px, calc(var(--ls-float-h, 460px) - 112px)); min-height: 0; }
