@@ -25,7 +25,7 @@
     };
 
     let catalog = null;          // [{name, tag, folder, preview, weight, triggers, sd, hash}]
-    let blockInfo = null;        // {family, layouts: {sdxl: [...], sd1: [...]}, presets: [{name, about, values}]}
+    let blockInfo = null;        // {family, layouts: {fam: [...]}, labels, groups, presets: [{name, about, values}], note}
     let catalogPromise = null;
     const stacks = {};           // tab -> Stack
 
@@ -59,8 +59,8 @@
     function loadBlockInfo() {
         return fetch("./lora-mixer/blocks")
             .then((r) => r.json())
-            .then((d) => (blockInfo = d))
-            .catch(() => (blockInfo = { family: "other", layouts: {}, presets: [] }));
+            .then((d) => (blockInfo = Object.assign({ labels: {}, groups: {}, note: "" }, d)))
+            .catch(() => (blockInfo = { family: "other", layouts: {}, labels: {}, groups: {}, presets: [], note: "" }));
     }
 
     function familyOf(values) {
@@ -78,15 +78,35 @@
 
     // A hint shown inside the block editor when block weights may have no effect.
     // It never stops you from editing them.
-    function blocksHint(info) {
+    function blocksHint(info, fam) {
         if (!blockInfo) return "";
-        if (info && info.arch === "dit") {
-            return "This LoRA looks like one for a transformer model (Flux, Qwen, Anima…). Block weights only act on SD 1.x / SDXL blocks, so they may have no effect.";
+        if (blockInfo.note) return blockInfo.note;
+        const modelFam = blockInfo.family;
+        if (!blockInfo.layouts || !blockInfo.layouts[modelFam]) {
+            return "The loaded model's blocks were not recognised, so the LoRA is used without block weights.";
         }
-        if (!blockInfo.layouts || !blockInfo.layouts[blockInfo.family]) {
-            return "The loaded model was not recognised as SD 1.x or SDXL. If it is one, block weights still apply; otherwise the LoRA is used without them.";
+        const sdModel = modelFam === "sdxl" || modelFam === "sd1";
+        if (info && info.arch === "dit" && sdModel) {
+            return "This LoRA looks like one for a transformer model (Flux, Qwen, Anima…), not for the loaded SD model.";
+        }
+        if (info && info.arch === "sd" && !sdModel) {
+            return "This LoRA looks like one for SD 1.x / SDXL, not for the loaded model.";
+        }
+        if (fam !== modelFam) {
+            return `Editing the ${labelOf(fam)} layout; the loaded model is ${labelOf(modelFam)}, so these values will not apply to it.`;
+        }
+        if (!sdModel) {
+            return "Transformer block weights are experimental: there is no settled map of what each block does yet. Try the presets and compare.";
         }
         return "";
+    }
+
+    function labelOf(fam) {
+        return (blockInfo && blockInfo.labels && blockInfo.labels[fam]) || ({ sdxl: "SDXL", sd1: "SD 1.x" }[fam]) || fam;
+    }
+
+    function prefixOf(name) {
+        return name === "BASE" ? "BASE" : name.replace(/\d+$/, "");
     }
 
     // The loaded model can change at any time (checkpoint dropdown); follow it.
@@ -95,8 +115,8 @@
             if (document.hidden || !blockInfo) return;
             fetch("./lora-mixer/family").then((r) => r.json()).then((d) => {
                 if (d && d.family && d.family !== blockInfo.family) {
-                    blockInfo.family = d.family;
-                    Object.values(stacks).forEach((s) => s.render());
+                    // A new model may bring a new layout (Flux, Anima…): fetch them again.
+                    loadBlockInfo().then(() => Object.values(stacks).forEach((s) => s.render()));
                 }
             }).catch(() => {});
         }, 4000);
@@ -747,7 +767,7 @@
             const bb = iconButton("blocks", "Block weights", "ls-blocks-btn");
             const preset = presetFor(item.lbw);
             const hasLbw = !!item.lbw && !isNeutral(item.lbw);
-            bb.title = hasLbw ? `Block weights: ${preset || item.lbw.join(", ")}` : "Block weights (off)";
+            bb.title = hasLbw ? `Block weights: ${preset || (item.lbw.length > 20 ? "custom" : item.lbw.join(", "))}` : "Block weights (off)";
             bb.addEventListener("click", () => {
                 if (this.openBlocks.has(item.name)) this.openBlocks.delete(item.name);
                 else this.openBlocks.add(item.name);
@@ -814,7 +834,7 @@
             const head = el("div", "ls-blocks-head");
             const famSel = el("span", "ls-seg");
             for (const f of fams) {
-                const b = el("button", "ls-seg-btn" + (f === fam ? " ls-active" : ""), f === "sdxl" ? "SDXL" : "SD 1.x");
+                const b = el("button", "ls-seg-btn" + (f === fam ? " ls-active" : ""), escapeHtml(labelOf(f)));
                 b.type = "button";
                 b.title = f === modelFam ? "The loaded model's layout" : "Layout for another model family";
                 b.addEventListener("click", () => {
@@ -831,7 +851,7 @@
             reset.addEventListener("click", () => { item.lbw = null; this.change(); });
             head.append(el("span", "ls-blocks-title", "Block weights"), famSel, el("span", "ls-spacer"), reset);
             box.append(head);
-            const hint = blocksHint(info);
+            const hint = blocksHint(info, fam);
             if (hint) box.append(el("div", "ls-note", hint));
 
             const presets = el("div", "ls-chips ls-presets");
@@ -851,27 +871,68 @@
             }
             box.append(presets);
 
-            const grid = el("div", "ls-grid");
-            names.forEach((n, i) => {
+            const set = (idxs, v) => {
+                if (!Number.isFinite(v)) return;
+                const next = vals.slice();
+                for (const i of idxs) next[i] = round(v);
+                item.lbw = isNeutral(next) ? null : next;
+                item._fam = fam;
+                this.change();
+            };
+            const cellOf = (n, i, label) => {
                 const cell = el("label", "ls-cell" + (Math.abs(vals[i] - 1) > 1e-9 ? " ls-cell-changed" : ""));
-                cell.append(el("span", "ls-cell-name", n === "M00" ? "MID" : n === "BASE" ? "TE" : n));
+                cell.append(el("span", "ls-cell-name", escapeHtml(label)));
                 cell.title = n === "BASE" ? "BASE: the text encoder" : n;
                 const input = el("input", "ls-cell-num");
                 input.type = "number";
                 input.step = "0.1";
                 input.value = String(vals[i]);
-                input.addEventListener("change", () => {
-                    const v = parseFloat(input.value);
-                    if (!Number.isFinite(v)) return;
-                    const next = vals.slice();
-                    next[i] = round(v);
-                    item.lbw = isNeutral(next) ? null : next;
-                    item._fam = fam;
-                    this.change();
-                });
+                input.addEventListener("change", () => set([i], parseFloat(input.value)));
                 cell.append(input);
-                grid.append(cell);
+                return cell;
+            };
+            // Blocks grouped as the model has them: TE, then input / middle / output
+            // blocks, or a transformer's double / single / ... blocks.
+            const groups = [];
+            names.forEach((n, i) => {
+                const p = prefixOf(n);
+                if (!groups.length || groups[groups.length - 1].prefix !== p) groups.push({ prefix: p, idx: [] });
+                groups[groups.length - 1].idx.push(i);
             });
+            const dit = names.length > 30 || groups.some((g) => !["BASE", "IN", "M", "OUT"].includes(g.prefix));
+            const grid = el("div", "ls-groups");
+            if (!dit) {
+                const flat = el("div", "ls-grid");
+                names.forEach((n, i) => flat.append(cellOf(n, i, n === "M00" ? "MID" : n === "BASE" ? "TE" : n)));
+                grid.append(flat);
+            } else {
+                for (const g of groups) {
+                    const sec = el("div", "ls-group");
+                    const head = el("div", "ls-group-head");
+                    const label = g.prefix === "BASE" ? "Text encoder"
+                        : `${(blockInfo.groups || {})[g.prefix] || g.prefix} · ${names[g.idx[0]]}–${names[g.idx[g.idx.length - 1]]}`;
+                    head.append(el("span", "ls-group-title", escapeHtml(label)));
+                    if (g.idx.length > 1) {
+                        const all = el("input", "ls-cell-num ls-group-all");
+                        all.type = "number";
+                        all.step = "0.1";
+                        all.placeholder = "all";
+                        all.title = "Set every block of this group";
+                        const same = g.idx.every((i) => Math.abs(vals[i] - vals[g.idx[0]]) < 1e-9);
+                        if (same) all.value = String(vals[g.idx[0]]);
+                        all.addEventListener("change", () => set(g.idx, parseFloat(all.value)));
+                        head.append(el("span", "ls-spacer"), el("span", "ls-wlabel", "all"), all);
+                    }
+                    sec.append(head);
+                    const cells = el("div", "ls-grid ls-grid-dense");
+                    for (const i of g.idx) {
+                        const n = names[i];
+                        cells.append(cellOf(n, i, n === "BASE" ? "TE" : n.slice(g.prefix.length)));
+                    }
+                    sec.append(cells);
+                    grid.append(sec);
+                }
+            }
             box.append(grid);
             return box;
         }

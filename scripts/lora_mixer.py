@@ -52,10 +52,14 @@ def on_app_started(_demo, app):
 
     def block_info():
         """The loaded model's family and the block layouts and presets for the editor."""
+        fam = hook.current_family()       # first: registers a transformer model's layout
         return {
-            "family": hook.current_family(),
-            "layouts": blocks.LAYOUTS,
-            "presets": [{"name": n, "about": a, "values": v} for n, a, v in blocks.PRESETS],
+            "family": fam,
+            "layouts": blocks.layouts(),
+            "labels": blocks.labels(),
+            "groups": blocks.GROUP_LABELS,
+            "presets": [{"name": n, "about": a, "values": v} for n, a, v in blocks.presets()],
+            "note": hook.unsupported_note(),
         }
 
     def family():
@@ -118,12 +122,13 @@ class Script(scripts.Script):
         if not enabled:
             return
         state = tags.parse_state(state_text)
+        fam = hook.current_family()       # also registers a transformer model's layout for tags_for
         base = getattr(p, "all_prompts", None) or [p.prompt]
         added, skipped = tags.tags_for(state, base[0] if base else "")
         if skipped:
             print(f"[LoRA Mixer] already in the prompt, not added again: {', '.join(skipped)}")
-        if any(it["lbw"] for it in state["items"] if it["on"]) and hook.current_family() == "other":
-            print("[LoRA Mixer] block weights are for SD1.x / SDXL; this model uses the LoRAs without them.")
+        if any(it["lbw"] for it in state["items"] if it["on"]) and fam == "other":
+            print("[LoRA Mixer] block weights: this model's blocks were not recognised; the LoRAs are used without them.")
         if not added:
             return
 

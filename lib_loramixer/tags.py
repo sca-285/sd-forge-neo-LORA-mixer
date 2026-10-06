@@ -39,7 +39,7 @@ def parse_state(text) -> dict:
         except (TypeError, ValueError):
             continue
         lbw = blocks.parse(it.get("lbw")) if it.get("lbw") is not None else None
-        if isinstance(lbw, str) or blocks.is_neutral(lbw):
+        if isinstance(lbw, (str, blocks.Named)) or blocks.is_neutral(lbw):
             lbw = None
         items.append({"name": str(it["name"]).strip(), "on": bool(it.get("on", True)),
                       "w": w, "te": te, "unet": unet, "lbw": lbw, "out": bool(it.get("out", False))})
@@ -48,7 +48,7 @@ def parse_state(text) -> dict:
 
 def tag_for(item, split) -> str:
     lbw = item.get("lbw")
-    extra = f":lbw={blocks.fmt_list(lbw)}" if lbw and not blocks.is_neutral(lbw) else ""
+    extra = f":lbw={blocks.fmt_spec(lbw)}" if lbw and not blocks.is_neutral(lbw) else ""
     if split and abs(item["te"] - item["unet"]) > 1e-9:
         # Positional form <lora:name:te:unet>, read the same way by all three WebUIs.
         return f"<lora:{item['name']}:{fmt(item['te'])}:{fmt(item['unet'])}{extra}>"
@@ -112,10 +112,8 @@ def extract(prompt, last=None, family=None):
         if abs(te - unet) > 1e-9:
             split = True
         lbw = blocks.parse(named.get("lbw")) if "lbw" in named else None
-        if isinstance(lbw, str):            # a preset name: store its values for this model
-            w = blocks.resolve(lbw, family) if family else None
-            names = blocks.LAYOUTS.get(family, [])
-            lbw = [w[n] for n in names] if w else None
+        if isinstance(lbw, (str, blocks.Named)):   # a preset or named blocks: store values for this model
+            lbw = blocks.values_for(lbw, family) if family else None
         if blocks.is_neutral(lbw):
             lbw = None
         items.append({"name": name, "on": True, "w": te, "te": te, "unet": unet, "lbw": lbw})

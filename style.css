@@ -395,3 +395,12 @@
 }
 .ls-root .ls-cell.ls-cell-changed .ls-cell-num { border-color: var(--ls-accent); }
 .ls-root .ls-cell.ls-cell-changed .ls-cell-name { color: var(--ls-accent); }
+
+/* grouped blocks (transformer models: double / single / ... blocks) */
+.ls-groups { display: flex; flex-direction: column; gap: 8px; }
+.ls-group { display: flex; flex-direction: column; gap: 4px; }
+.ls-group-head { display: flex; align-items: center; gap: 6px; }
+.ls-group-title { font-size: var(--text-sm, 13px); font-weight: 600; }
+.ls-root .ls-group-all { width: 64px; height: 26px; }
+.ls-grid.ls-grid-dense { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; }
+.ls-grid-dense .ls-cell-num { height: 26px; }

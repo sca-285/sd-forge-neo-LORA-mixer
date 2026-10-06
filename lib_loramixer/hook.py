@@ -13,11 +13,13 @@ thin wrappers add block weights to that path without replacing any of it:
   add_patches()           splits that file's patches by block and adds each
                           group at strength x block weight (0 = left out).
 
-Nothing changes for a LoRA without lbw=.
+Nothing changes for a LoRA without lbw=. The same path serves SD 1.x, SDXL and
+transformer models (Flux, Anima, ...): only the block names differ (blocks.py).
 """
 
 from __future__ import annotations
 
+import re
 import sys
 import threading
 
@@ -35,30 +37,82 @@ def _note(key, text):
         print(f"[LoRA Mixer] {text}")
 
 
-def _family():
-    """'sdxl' or 'sd1' for the loaded model, None for anything else.
+# Transformer models by class (Forge Neo's names), for a readable family id.
+_DIT_NAMES = {
+    "integratedfluxtransformer2dmodel": ("flux", "Flux"),
+    "integratedchromatransformer2dmodel": ("chroma", "Chroma"),
+    "qwenimagetransformer2dmodel": ("qwen", "Qwen-Image"),
+    "anima": ("anima", "Anima"),
+    "nextdit": ("zimage", "Z-Image / Lumina 2"),
+    "wanmodel": ("wan", "Wan"),
+    "singlestreamdit": ("krea", "Krea"),
+}
 
-    The model's own flags first; failing those, the UNet's shape (SDXL has 9
-    input blocks, SD 1.x / 2.x have 12), so a WebUI that names its flags
-    differently still gets block weights.
-    """
+
+def _diffusion_model():
     try:
         # model_data, not shared.sd_model: on reForge reading that from the UI
         # can start loading a checkpoint.
         from modules import sd_models
         m = sd_models.model_data.sd_model
     except Exception:
+        return None, None
+    if m is None:
+        return None, None
+    try:
+        unet = m.forge_objects.unet.model.diffusion_model
+    except Exception:
+        unet = getattr(getattr(m, "model", None), "diffusion_model", None)
+    return m, unet
+
+
+def _is_nunchaku(unet):
+    return any("nunchaku" in c.__name__.lower() or c.__name__.lower().startswith("svdq")
+               for c in type(unet).__mro__)
+
+
+def _dit_family(unet):
+    """Register the transformer's block layout and return its family id, or None."""
+    if unet is None or _is_nunchaku(unet):
         return None
+    groups = []
+    for container, prefix, _label in blocks.DIT_GROUPS:
+        mods = getattr(unet, container, None)
+        try:
+            n = len(mods) if mods is not None else 0
+        except TypeError:
+            n = 0
+        if n:
+            groups.append((prefix, n))
+    if not groups:
+        return None
+    cls = type(unet).__name__
+    fam, label = _DIT_NAMES.get(cls.lower(), (re.sub(r"[^a-z0-9]+", "", cls.lower()) or "dit", cls))
+    names = ["BASE"] + [f"{p}{i:02d}" for p, n in groups for i in range(n)]
+    known = blocks.names_of(fam)
+    if known is not None and known != names:        # a variant with another block count
+        fam, label = f"{fam}{len(names) - 1}", f"{label} ({len(names) - 1} blocks)"
+    if blocks.names_of(fam) is None:
+        blocks.register(fam, label, groups)
+    return fam
+
+
+def _family():
+    """'sdxl', 'sd1' or a transformer family ('flux', 'anima', ...) for the loaded
+    model, None for anything else.
+
+    The model's own flags first; failing those, the UNet's shape (SDXL has 9
+    input blocks, SD 1.x / 2.x have 12), so a WebUI that names its flags
+    differently still gets block weights. A transformer's layout is read from
+    the blocks the model has.
+    """
+    m, unet = _diffusion_model()
     if m is None:
         return None
     if getattr(m, "is_sdxl", False):
         return "sdxl"
     if getattr(m, "is_sd1", False) or getattr(m, "is_sd2", False):
         return "sd1"
-    try:
-        unet = m.forge_objects.unet.model.diffusion_model
-    except Exception:
-        unet = getattr(getattr(m, "model", None), "diffusion_model", None)
     blocks_in = getattr(unet, "input_blocks", None)
     if blocks_in is not None and getattr(unet, "output_blocks", None) is not None:
         n = len(blocks_in)
@@ -66,11 +120,20 @@ def _family():
             return "sdxl"
         if n == 12:
             return "sd1"
-    return None
+    return _dit_family(unet)
 
 
 def current_family():
     return _family() or "other"
+
+
+def unsupported_note():
+    """Why block weights cannot act on the loaded model, or ''."""
+    _m, unet = _diffusion_model()
+    if unet is not None and _is_nunchaku(unet):
+        return ("This is a Nunchaku (SVDQuant) model: it applies LoRAs its own way, so block weights "
+                "have no effect on it. GGUF and fp8 models work.")
+    return ""
 
 
 # ------------------------------------------------------------------ wrappers
@@ -169,7 +232,7 @@ def _wrap_loader(networks):
             weights = blocks.resolve(spec, fam) if fam else None
             if weights is None:
                 _note(("fam", filename, fam), f"block weights for {filename} do not fit this model "
-                      f"({fam or 'not SD1/SDXL'}); applied without them.")
+                      f"({fam or 'blocks not recognised'}); applied without them.")
         _state.weights = weights
         try:
             return fn(*args, **kwargs)

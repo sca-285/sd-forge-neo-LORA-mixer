@@ -70,6 +70,8 @@ says so).
 
 ## Block weights
 
+### SD 1.x and SDXL
+
 A LoRA touches the text encoder and every block of the UNet. Block weights
 scale each part separately: 0 leaves it out, 1 is the normal strength, and the
 row's own weight still multiplies everything.
@@ -101,17 +103,46 @@ The last three come from research on LoRAs trained for that split
 ([B-LoRA](https://b-lora.github.io/B-LoRA/), Frenkel et al., 2024); with an
 ordinary LoRA they are an approximation worth trying, not a guarantee.
 
-The **blocks** button always works. When block weights may not act, the editor
-says so: for a LoRA that looks like one for a transformer model (Flux, Qwen,
-Anima, …, told from the key names in the file), or when the loaded model is not
-recognised as SD 1.x / SDXL (by its flags, or else by its UNet's shape).
+### Transformer models (Flux, Chroma, Anima, Qwen-Image, Z-Image, Wan, …)
 
-In the prompt a block-weighted LoRA is written as
+These have no fixed layout, so the mixer counts the loaded model's blocks and
+names them by the part of the model they sit in:
+
+| Model | Blocks |
+|---|---|
+| Flux / Chroma | TE, D00–D18 (double blocks), S00–S37 (single blocks) |
+| Qwen-Image | TE, T00–T59 |
+| Anima, Wan | TE, B00–… |
+| Z-Image / Lumina 2 | TE, CR00–… / NR00–… (context / noise refiner), L00–… |
+
+The editor groups them, with an **all** box per group, and offers presets: No
+text encoder, Early / Middle / Late third, Skip late blocks, and for Flux /
+Chroma Double or Single blocks only. These are **experimental**: unlike SDXL
+there is no settled map yet of what each transformer block does, so compare.
+
+In the prompt a transformer LoRA is written with short `NAME*VALUE` entries
+instead of 58 numbers; blocks not named stay at 1:
+
+```
+<lora:name:0.8:lbw=TE*0,S07-S20*0.5,D*0.8>     TE, a range, a whole group
+<lora:name:1:lbw=EARLY*1,MIDDLE*0.5,LATE*0>    thirds of any model
+```
+
+`TE`/`BASE`, a block (`S07`), a range (`S07-S20`), a group (`D`, `S`, `IN`,
+`OUT`) or `EARLY` / `MIDDLE` / `LATE` / `ALL`; this form works for SD 1.x and
+SDXL too (`lbw=TE*0,OUT*0.5`). A preset name works as before.
+
+Nunchaku (SVDQuant) models apply LoRAs their own way, so block weights have no
+effect on them; GGUF and fp8 models work.
+
+The **blocks** button always works. The editor says when block weights may not
+act: a LoRA made for another kind of model (told from the key names in the
+file), a Nunchaku model, or a model whose blocks were not recognised.
+
+In the prompt an SD 1.x / SDXL block-weighted LoRA is written as
 `<lora:name:0.8:lbw=1,0,0,0,0,0,0,1,0,0,0,0>`. Block weights are applied inside
 the WebUI's own LoRA loader, so this also works when typed by hand, and a
-preset name works there too (`lbw=No text encoder`). They apply to SD 1.x and
-SDXL models; with other models (Flux, Qwen, …) the LoRA is used without them
-and the console says so.
+preset name works there too (`lbw=No text encoder`).
 
 ## On and off mechanism
 
