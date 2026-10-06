@@ -71,6 +71,73 @@ def _is_nunchaku(unet):
                for c in type(unet).__mro__)
 
 
+def _register(fam, label, groups):
+    """Register a transformer layout under `fam`, or a variant name when `fam`
+    already has another block count; returns the family id."""
+    names = ["BASE"] + [f"{p}{i:02d}" for p, n in groups for i in range(n)]
+    known = blocks.names_of(fam)
+    if known is not None and known != names:        # a variant with another block count
+        fam, label = f"{fam}{len(names) - 1}", f"{label} ({len(names) - 1} blocks)"
+    if blocks.names_of(fam) is None:
+        blocks.register(fam, label, groups)
+    return fam
+
+
+_file_families = {}      # (path, mtime) -> family or None
+
+
+def _family_of_checkpoint(path):
+    """The family of a checkpoint file that is chosen but not loaded yet, told
+    from its weight names (safetensors / GGUF header only)."""
+    import os
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key in _file_families:
+        fam = _file_families[key]
+        return fam
+    names = blocks.tensor_names(path)
+    found = blocks.model_groups(names)
+    fam = None
+    if isinstance(found, str):
+        fam = found
+    elif found:
+        prefixes = {p for p, _ in found}
+        text = " ".join(names[:4000])
+        if {"D", "S"} <= prefixes:
+            base = ("chroma", "Chroma") if "distilled_guidance_layer" in text else ("flux", "Flux")
+        elif prefixes == {"T"}:
+            base = ("qwen", "Qwen-Image")
+        elif "L" in prefixes and ({"NR", "CR"} & prefixes):
+            base = ("zimage", "Z-Image / Lumina 2")
+        elif "B" in prefixes and "patch_embedding" in text:
+            base = ("wan", "Wan")
+        elif "B" in prefixes and ("refiner_blocks" in text or "layerwise_blocks" in text):
+            base = ("krea", "Krea")
+        elif "B" in prefixes:
+            base = ("anima", "Anima")
+        else:
+            base = ("dit", "Transformer")
+        fam = _register(base[0], base[1], found)
+    _file_families[key] = fam
+    return fam
+
+
+def _pending_checkpoint():
+    """Forge / Neo load the chosen checkpoint only at the next generation; until
+    then the old model stays in memory. The chosen file while that is so, else None."""
+    try:
+        from modules import sd_models
+        md = sd_models.model_data
+        params = getattr(md, "forge_loading_parameters", None)
+        if not params or getattr(md, "forge_hash", None) == str(params):
+            return None
+        return getattr(params.get("checkpoint_info"), "filename", None)
+    except Exception:
+        return None
+
+
 def _dit_family(unet):
     """Register the transformer's block layout and return its family id, or None."""
     if unet is None or _is_nunchaku(unet):
@@ -88,13 +155,7 @@ def _dit_family(unet):
         return None
     cls = type(unet).__name__
     fam, label = _DIT_NAMES.get(cls.lower(), (re.sub(r"[^a-z0-9]+", "", cls.lower()) or "dit", cls))
-    names = ["BASE"] + [f"{p}{i:02d}" for p, n in groups for i in range(n)]
-    known = blocks.names_of(fam)
-    if known is not None and known != names:        # a variant with another block count
-        fam, label = f"{fam}{len(names) - 1}", f"{label} ({len(names) - 1} blocks)"
-    if blocks.names_of(fam) is None:
-        blocks.register(fam, label, groups)
-    return fam
+    return _register(fam, label, groups)
 
 
 def _family():
@@ -129,6 +190,14 @@ def _family():
 
 
 def current_family():
+    """The family block weights are edited and applied for: the chosen checkpoint
+    when it is not loaded yet (Forge / Neo load at the next generation), else the
+    loaded model."""
+    pending = _pending_checkpoint()
+    if pending:
+        fam = _family_of_checkpoint(pending)
+        if fam:
+            return fam
     return _family() or "other"
 
 

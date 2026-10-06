@@ -88,13 +88,13 @@
         }
         const sdModel = modelFam === "sdxl" || modelFam === "sd1";
         if (info && info.arch === "dit" && sdModel) {
-            return "This LoRA looks like one for a transformer model (Flux, Qwen, Anima…), not for the loaded SD model.";
+            return "This LoRA looks like one for a transformer model (Flux, Qwen, Anima…), not for the selected SD 1.x / SDXL model.";
         }
         if (info && info.arch === "sd" && !sdModel) {
-            return "This LoRA looks like one for SD 1.x / SDXL, not for the loaded model.";
+            return "This LoRA looks like one for SD 1.x / SDXL, not for the selected model.";
         }
         if (fam !== modelFam) {
-            return `Editing the ${labelOf(fam)} layout; the loaded model is ${labelOf(modelFam)}, so these values will not apply to it.`;
+            return `Editing the ${labelOf(fam)} layout; the selected model is ${labelOf(modelFam)}, so these values will not apply to it.`;
         }
         if (!sdModel) {
             return "Transformer block weights are experimental: there is no settled map of what each block does yet. Try the presets and compare.";

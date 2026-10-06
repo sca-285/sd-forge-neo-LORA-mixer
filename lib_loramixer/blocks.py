@@ -419,6 +419,89 @@ def lora_arch(keys):
     return "sd" if sd else ("dit" if dit else None)
 
 
+def tensor_names(path):
+    """Tensor names from a .safetensors or .gguf header (no tensors are read), or []."""
+    import json
+    import struct
+    p = str(path).lower()
+    try:
+        with open(path, "rb") as f:
+            if p.endswith(".safetensors"):
+                n = struct.unpack("<Q", f.read(8))[0]
+                if n <= 0 or n > 100_000_000:
+                    return []
+                return [k for k in json.loads(f.read(n)) if k != "__metadata__"]
+            if p.endswith(".gguf"):
+                return _gguf_names(f)
+    except Exception:
+        return []
+    return []
+
+
+def _gguf_names(f):
+    import struct
+
+    def u32():
+        return struct.unpack("<I", f.read(4))[0]
+
+    def u64():
+        return struct.unpack("<Q", f.read(8))[0]
+
+    def string():
+        return f.read(u64()).decode("utf8", "replace")
+
+    sizes = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+
+    def skip(kind):
+        if kind in sizes:
+            f.seek(sizes[kind], 1)
+        elif kind == 8:
+            string()
+        elif kind == 9:
+            sub, count = u32(), u64()
+            if sub in sizes:
+                f.seek(sizes[sub] * count, 1)
+            else:
+                for _ in range(count):
+                    skip(sub)
+        else:
+            raise ValueError(f"unknown GGUF value type {kind}")
+
+    if f.read(4) != b"GGUF":
+        return []
+    u32()                                   # version
+    n_tensors, n_kv = u64(), u64()
+    for _ in range(n_kv):
+        string()
+        skip(u32())
+    names = []
+    for _ in range(n_tensors):
+        names.append(string())
+        dims = u32()
+        f.seek(8 * dims + 4 + 8, 1)         # dims, type, offset
+    return names
+
+
+# Weights of the text encoders / VAE inside an all-in-one checkpoint.
+_NOT_MODEL = re.compile(r"(text_model|text_encoders|conditioner|cond_stage_model|first_stage_model|"
+                        r"(?:^|\.)vae\.|llm_adapter|qwen3|t5xxl|clip_[lg]\.)")
+
+
+def model_groups(names):
+    """[(prefix, count)] of a transformer's blocks from its weight names, in run
+    order, or 'sdxl' / 'sd1' for a UNet, or None."""
+    names = [n for n in names if not _NOT_MODEL.search(n)]
+    ins = {int(m.group(1)) for n in names for m in [re.search(r"(?:^|\.)input_blocks\.(\d+)\.", n)] if m}
+    if ins:
+        return {9: "sdxl", 12: "sd1"}.get(max(ins) + 1)
+    found = {}
+    for n in names:
+        m = _DIT_KEY.search(n)
+        if m:
+            found.setdefault(m.group(1), set()).add(int(m.group(2)))
+    return [(_DIT_PREFIX[c], max(found[c]) + 1) for c, _p, _l in DIT_GROUPS if c in found] or None
+
+
 def lora_arch_of_file(path):
     """lora_arch() from a .safetensors header only (no tensors are read)."""
     import json
