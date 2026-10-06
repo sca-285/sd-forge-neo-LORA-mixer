@@ -34,8 +34,21 @@ git clone https://github.com/sca-285/sd-forge-neo-LORA-mixer.git
          film grain · cinematic · analog · Add all
 ```
 
-- **Add LoRA** opens a searchable list with thumbnails. Search matches the name,
-  the folder and the trigger words. The refresh button rescans the LoRA folders.
+- **Add LoRA** opens a searchable list with thumbnails, built for thousands of
+  LoRAs:
+  - Search matches the name, the folder and the trigger words; every word must
+    match, `_ - .` count as spaces, and matches in the name come first.
+  - Filter by **folder** (subfolders included), show only **★ favorites**
+    (click ☆ on a LoRA) or **Recent** ones; order by folder, name or newest.
+  - **List / grid** view (grid shows bigger previews).
+  - Keyboard: **↑ ↓ PgUp PgDn** move, **Enter** adds, **Shift+Enter** (or
+    Shift/Ctrl+click) adds and keeps the list open to add several, **Esc** closes.
+  - The refresh button rescans the LoRA folders.
+
+  Only the rows in view are drawn and previews are served as small cached
+  thumbnails, so the list stays fast. The list is read in the background at
+  start-up; file headers and `.civitai.info` files are cached in `cache/` and
+  read again only for new or changed files.
 - Click a LoRA's **name** to swap it for another; drag the **⋮⋮** handle to
   reorder; the switch turns a row off without removing it.
 - The weight starts at the LoRA's *preferred weight* (set in the sidebar's

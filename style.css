@@ -196,7 +196,7 @@
 .ls-root .ls-chip.ls-chip-used { opacity: 0.5; }
 .ls-root .ls-chip.ls-chip-all { font-weight: 600; }
 
-/* ---- picker */
+/* ---- picker (a virtual list: only the rows in view are in the page) */
 .ls-picker {
     position: absolute;
     top: 38px;
@@ -205,7 +205,8 @@
     z-index: 50;
     display: flex;
     flex-direction: column;
-    max-height: 420px;
+    height: min(70vh, 600px);
+    min-height: 260px;
     border: 1px solid var(--ls-border);
     border-radius: 10px;
     background: var(--background-fill-primary, #1f1f23);
@@ -213,9 +214,18 @@
     overflow: hidden;
 }
 .ls-picker[hidden] { display: none; }
-.ls-picker-top { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--ls-border); }
+.ls-picker-top { display: flex; gap: 6px; padding: 8px 8px 6px; }
+.ls-picker-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 8px;
+    border-bottom: 1px solid var(--ls-border);
+}
 .ls-root .ls-search {
     flex: 1;
+    min-width: 0;
     height: 32px;
     padding: 0 10px;
     border: 1px solid var(--ls-border);
@@ -223,27 +233,82 @@
     background: var(--input-background-fill, transparent);
     color: inherit;
 }
-.ls-picker-list { overflow: auto; padding: 4px; }
+.ls-root .ls-select {
+    height: 28px;
+    min-width: 0;
+    padding: 0 6px;
+    border: 1px solid var(--ls-border);
+    border-radius: 8px;
+    background: var(--input-background-fill, transparent);
+    color: inherit;
+    font-size: var(--text-sm, 13px);
+}
+.ls-root .ls-folder { flex: 1 1 140px; max-width: 100%; }
+.ls-root .ls-select option { background: var(--background-fill-primary, #1f1f23); color: var(--body-text-color, inherit); }
+.ls-picker-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px; position: relative; }
+.ls-picker-spacer { position: relative; }
+.ls-picker-window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+.ls-picker-status {
+    padding: 4px 10px;
+    border-top: 1px solid var(--ls-border);
+    font-size: var(--text-xs, 11px);
+    color: var(--ls-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .ls-root .ls-pick {
-    display: flex !important;
+    display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
-    min-width: 0 !important;
-    padding: 4px 6px !important;
-    border: none !important;
+    height: 48px;               /* ROW_H in lora_mixer.js */
+    box-sizing: border-box;
+    padding: 4px 6px;
     border-radius: 8px;
-    background: none !important;
     color: inherit;
-    text-align: left;
     cursor: pointer;
+    user-select: none;
 }
-.ls-root .ls-pick:hover { background: var(--ls-bg2) !important; }
+.ls-root .ls-pick.ls-active { background: var(--ls-bg2); box-shadow: inset 0 0 0 1px var(--ls-accent); }
 .ls-root .ls-pick.ls-used { opacity: 0.5; }
 .ls-pick .ls-thumb { width: 40px; height: 40px; }
-.ls-pick-text { display: flex; flex-direction: column; min-width: 0; }
+.ls-pick-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ls-pick-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.ls-pick-sub { font-size: var(--text-xs, 11px); color: var(--ls-sub); }
+.ls-pick-name mark { background: none; color: var(--ls-accent); font-weight: 600; padding: 0; }
+.ls-pick-sub { font-size: var(--text-xs, 11px); color: var(--ls-sub); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ls-star {
+    flex: none;
+    width: 24px;
+    text-align: center;
+    font-size: 16px;
+    line-height: 24px;
+    color: var(--ls-sub);
+    opacity: 0;
+}
+.ls-pick:hover .ls-star, .ls-pick.ls-active .ls-star, .ls-star.ls-fav { opacity: 1; }
+.ls-star:hover { color: var(--ls-accent); }
+.ls-star.ls-fav { color: #f5b301; }
+
+/* grid view: bigger previews, TILE_H in lora_mixer.js */
+.ls-picker-window.ls-grid-view { display: grid; gap: 0; }
+.ls-root .ls-grid-view .ls-pick {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    height: 168px;
+    padding: 4px;
+}
+.ls-grid-view .ls-pick .ls-thumb { width: 100%; height: auto; flex: 1; min-height: 0; }
+.ls-grid-view .ls-pick-text { flex: none; }
+.ls-grid-view .ls-pick-name { font-size: var(--text-sm, 13px); }
+.ls-grid-view .ls-star {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    border-radius: 6px;
+    background: var(--background-fill-primary, #1f1f23);
+}
 
 /* ---- floating window */
 .ls-float {

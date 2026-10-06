@@ -37,10 +37,18 @@ def on_ui_settings():
 
 
 def on_app_started(_demo, app):
-    from fastapi import Body, Query
+    from fastapi import Body, Query, Response
 
     def lora_list(refresh: bool = Query(False)):
         return {"items": catalog.build(refresh=refresh)}
+
+    def thumb(k: str = Query(...)):
+        got = catalog.thumbnail(k)
+        if got is None:
+            return Response(status_code=404)
+        data, media = got
+        # The URL carries the preview's mtime, so the browser may keep it for good.
+        return Response(content=data, media_type=media, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     def block_info():
         """The loaded model's family and the block layouts and presets for the editor."""
@@ -69,10 +77,12 @@ def on_app_started(_demo, app):
         return {"prompt": prompt, "state": state}
 
     app.add_api_route("/lora-mixer/list", lora_list, methods=["GET"])
+    app.add_api_route("/lora-mixer/thumb", thumb, methods=["GET"])
     app.add_api_route("/lora-mixer/convert", convert, methods=["POST"])
     app.add_api_route("/lora-mixer/blocks", block_info, methods=["GET"])
     app.add_api_route("/lora-mixer/family", family, methods=["GET"])
     hook.install()
+    catalog.warm_up()
 
 
 script_callbacks.on_ui_settings(on_ui_settings)

@@ -19,6 +19,8 @@
         split: '<svg viewBox="0 0 24 24"><path d="M4 7h10M4 17h16M17 4v6M8 14v6"/></svg>',
         dock: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/></svg>',
         blocks: '<svg viewBox="0 0 24 24"><path d="M4 20V10M9 20V4M14 20v-8M19 20V7"/></svg>',
+        grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
+        list: '<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><rect x="3.5" y="4.5" width="3" height="3" rx="0.5"/><rect x="3.5" y="10.5" width="3" height="3" rx="0.5"/><rect x="3.5" y="16.5" width="3" height="3" rx="0.5"/></svg>',
         all: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 12l3 3 5-6"/></svg>',
     };
 
@@ -104,62 +106,237 @@
         return !values || values.every((v) => Math.abs(v - 1) < 1e-9);
     }
 
+    // Search text: lower case, with _ - . read as spaces ("stone sauna" finds
+    // Stone_Sauna-v2). Same length as the input, so match positions line up.
+    function norm(s) {
+        return String(s || "").toLowerCase().replace(/[_\-.]/g, " ");
+    }
+
+    let byTag = new Map();
+    let byName = new Map();
+
+    function indexCatalog(items) {
+        byTag = new Map();
+        byName = new Map();
+        items.forEach((c, i) => {
+            c._i = i;
+            c._tag = String(c.tag).toLowerCase();
+            c._n = norm(c.name);
+            c._folder = String(c.folder || "").toLowerCase();
+            c._hay = [c._n, norm(c.tag), norm(c.folder), norm((c.triggers || []).join(" "))].join("\n");
+            if (!byTag.has(c._tag)) byTag.set(c._tag, c);
+            const n = String(c.name).toLowerCase();
+            if (!byName.has(n)) byName.set(n, c);
+        });
+        items.slice().sort((a, b) => a._n.localeCompare(b._n)).forEach((c, i) => (c._byName = i));
+        return items;
+    }
+
     function loadCatalog(refresh) {
         if (catalog && !refresh) return Promise.resolve(catalog);
         if (catalogPromise && !refresh) return catalogPromise;
         catalogPromise = fetch("./lora-mixer/list" + (refresh ? "?refresh=true" : ""))
             .then((r) => r.json())
-            .then((d) => (catalog = d.items || []))
-            .catch(() => (catalog = []));
+            .then((d) => (catalog = indexCatalog(d.items || [])))
+            .catch(() => (catalog = indexCatalog([])));
         return catalogPromise;
     }
 
     function findLora(tag) {
         if (!catalog) return null;
         const t = String(tag).toLowerCase();
-        return catalog.find((c) => String(c.tag).toLowerCase() === t) ||
-            catalog.find((c) => String(c.name).toLowerCase() === t) || null;
+        return byTag.get(t) || byName.get(t) || null;
+    }
+
+    // ------------------------------------------------- picker preferences
+
+    function loadJSON(key, fallback) {
+        try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v ?? fallback; } catch (e) { return fallback; }
+    }
+
+    function saveJSON(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ }
+    }
+
+    const PREFS_KEY = "lora-mixer-picker";
+    const FAVS_KEY = "lora-mixer-favorites";
+    const RECENT_KEY = "lora-mixer-recent";
+    const RECENT_MAX = 60;
+    const prefs = Object.assign({ folder: "", sort: "folder", view: "list", scope: "all" }, loadJSON(PREFS_KEY, {}));
+    const favorites = new Set(loadJSON(FAVS_KEY, []));
+    let recent = loadJSON(RECENT_KEY, []);
+
+    function toggleFavorite(tag) {
+        if (favorites.has(tag)) favorites.delete(tag);
+        else favorites.add(tag);
+        saveJSON(FAVS_KEY, [...favorites]);
+    }
+
+    function noteRecent(tag) {
+        recent = [tag, ...recent.filter((t) => t !== tag)].slice(0, RECENT_MAX);
+        saveJSON(RECENT_KEY, recent);
+    }
+
+    // How well a LoRA matches the search words, or -1. Every word must appear
+    // somewhere (name, tag, folder, trigger words); hits in the name rank first.
+    function score(c, words, whole) {
+        let s = 0;
+        for (const w of words) {
+            if (!c._hay.includes(w)) return -1;
+            const i = c._n.indexOf(w);
+            if (i === 0) s += 30;
+            else if (i > 0) s += c._n[i - 1] === " " ? 20 : 10;
+            else if (c._folder.includes(w)) s += 3;
+            else s += 1;
+        }
+        if (c._n === whole) s += 100;
+        return s;
+    }
+
+    function highlight(name, n, words) {
+        if (!words.length || n.length !== name.length) return escapeHtml(name);
+        const marks = new Array(name.length).fill(false);
+        for (const w of words) {
+            const i = n.indexOf(w);
+            if (i >= 0) for (let k = i; k < i + w.length; k++) marks[k] = true;
+        }
+        let out = "";
+        let open = false;
+        for (let k = 0; k < name.length; k++) {
+            if (marks[k] !== open) { out += marks[k] ? "<mark>" : "</mark>"; open = marks[k]; }
+            out += escapeHtml(name[k]);
+        }
+        return out + (open ? "</mark>" : "");
     }
 
     // ------------------------------------------------------------- picker
 
+    const ROW_H = 48;            // list view row height, px (matches style.css)
+    const TILE_W = 124;          // grid view: smallest tile width
+    const TILE_H = 168;          // grid view: tile height
+
+    // Only the rows in view are in the page, so thousands of LoRAs scroll
+    // smoothly and only the visible thumbnails are loaded.
     class Picker {
         constructor(stack) {
             this.stack = stack;
             this.node = el("div", "ls-picker");
             this.node.hidden = true;
+            this.hits = [];
+            this.words = [];
+            this.used = new Set();
+            this.active = 0;
+            this.cols = 1;
+            this.rowH = ROW_H;
+            this.painted = "";
+            this.onPick = null;
+            this.multi = false;
+
             this.search = el("input", "ls-search");
             this.search.type = "search";
-            this.search.placeholder = "Search LoRAs (name, folder, trigger word)";
+            this.search.placeholder = "Search name, folder, trigger word…";
+            this.viewBtn = iconButton(prefs.view === "grid" ? "list" : "grid", "Grid / list view", "ls-view");
+            this.viewBtn.addEventListener("click", () => {
+                prefs.view = prefs.view === "grid" ? "list" : "grid";
+                saveJSON(PREFS_KEY, prefs);
+                this.viewBtn.innerHTML = ICON[prefs.view === "grid" ? "list" : "grid"];
+                this.painted = "";
+                this.list.scrollTop = 0;
+                this.paint();
+                this.search.focus();
+            });
             const refresh = iconButton("refresh", "Rescan the LoRA folders");
             refresh.addEventListener("click", () => {
-                this.list.innerHTML = '<div class="ls-empty">Scanning…</div>';
-                loadCatalog(true).then(() => { this.render(); this.stack.render(); });
+                this.status.textContent = "Scanning…";
+                loadCatalog(true).then(() => { this.fillFolders(); this.filter(); this.stack.render(); });
             });
             const top = el("div", "ls-picker-top");
-            top.append(this.search, refresh);
-            this.list = el("div", "ls-picker-list");
-            this.node.append(top, this.list);
-            this.search.addEventListener("input", () => this.render());
-            this.search.addEventListener("keydown", (e) => {
-                if (e.key === "Escape") this.close();
-                if (e.key === "Enter") {
-                    const first = this.list.querySelector(".ls-pick");
-                    if (first) first.click();
-                }
+            top.append(this.search, this.viewBtn, refresh);
+
+            const filters = el("div", "ls-picker-filters");
+            this.scope = el("span", "ls-seg");
+            for (const [id, label, title] of [["all", "All", "Every LoRA"], ["fav", "★", "Favorites (click ☆ on a LoRA)"], ["recent", "Recent", "Recently added"]]) {
+                const b = el("button", "ls-seg-btn", label);
+                b.type = "button";
+                b.title = title;
+                b.dataset.scope = id;
+                b.addEventListener("click", () => {
+                    prefs.scope = id;
+                    saveJSON(PREFS_KEY, prefs);
+                    this.filter();
+                    this.search.focus();
+                });
+                this.scope.append(b);
+            }
+            this.folderSel = el("select", "ls-select ls-folder");
+            this.folderSel.title = "Folder";
+            this.folderSel.addEventListener("change", () => {
+                prefs.folder = this.folderSel.value;
+                saveJSON(PREFS_KEY, prefs);
+                this.filter();
             });
+            this.sortSel = el("select", "ls-select ls-sort");
+            this.sortSel.title = "Order (search results put the best matches first)";
+            for (const [v, label] of [["folder", "Folder"], ["name", "Name"], ["newest", "Newest"]]) {
+                const o = el("option", "", label);
+                o.value = v;
+                this.sortSel.append(o);
+            }
+            this.sortSel.value = prefs.sort;
+            this.sortSel.addEventListener("change", () => {
+                prefs.sort = this.sortSel.value;
+                saveJSON(PREFS_KEY, prefs);
+                this.filter();
+            });
+            filters.append(this.scope, this.folderSel, this.sortSel);
+
+            this.list = el("div", "ls-picker-list");
+            this.spacer = el("div", "ls-picker-spacer");
+            this.win = el("div", "ls-picker-window");
+            this.spacer.append(this.win);
+            this.list.append(this.spacer);
+            this.status = el("div", "ls-picker-status");
+            this.node.append(top, filters, this.list, this.status);
+
+            this.search.addEventListener("input", () => {
+                clearTimeout(this.timer);
+                this.timer = setTimeout(() => this.filter(), 60);
+            });
+            this.node.addEventListener("keydown", (e) => this.key(e));
+            this.list.addEventListener("scroll", () => {
+                if (this.frame) return;
+                this.frame = requestAnimationFrame(() => { this.frame = null; this.paint(); });
+            });
+            this.win.addEventListener("click", (e) => {
+                const row = e.target.closest(".ls-pick");
+                if (!row) return;
+                const c = this.hits[Number(row.dataset.i)];
+                if (e.target.closest(".ls-star")) {
+                    toggleFavorite(c._tag);
+                    if (prefs.scope === "fav") this.filter(true);
+                    else this.paint(true);
+                    return;
+                }
+                this.pick(c, e.shiftKey || e.ctrlKey || e.metaKey);
+            });
+            this.win.addEventListener("mousemove", (e) => {
+                const row = e.target.closest(".ls-pick");
+                if (row) this.setActive(Number(row.dataset.i), false);
+            });
+            new ResizeObserver(() => { if (!this.node.hidden) this.paint(); }).observe(this.list);
             document.addEventListener("mousedown", (e) => {
                 if (!this.node.hidden && !this.node.contains(e.target) && !e.target.closest(".ls-open-picker")) this.close();
             });
-            this.onPick = null;
         }
 
-        open(onPick) {
+        // multi: Shift/Ctrl+click or Shift+Enter adds and keeps the picker open.
+        open(onPick, multi) {
             this.onPick = onPick;
+            this.multi = !!multi;
             this.node.hidden = false;
             this.search.value = "";
-            this.list.innerHTML = '<div class="ls-empty">Loading…</div>';
-            loadCatalog().then(() => this.render());
+            this.status.textContent = "Loading…";
+            loadCatalog().then(() => { this.fillFolders(); this.filter(); });
             setTimeout(() => this.search.focus(), 0);
         }
 
@@ -168,43 +345,167 @@
             this.onPick = null;
         }
 
-        render() {
-            const q = this.search.value.trim().toLowerCase();
-            const words = q.split(/\s+/).filter(Boolean);
-            const used = new Set(this.stack.items.map((i) => i.name.toLowerCase()));
-            const hits = (catalog || []).filter((c) => {
-                const hay = (c.name + " " + c.tag + " " + c.folder + " " + c.triggers.join(" ")).toLowerCase();
-                return words.every((w) => hay.includes(w));
+        fillFolders() {
+            if (this.foldersOf === catalog) return;
+            this.foldersOf = catalog;
+            const counts = new Map();
+            let top = 0;
+            for (const c of catalog) {
+                if (!c.folder) { top++; continue; }
+                const parts = String(c.folder).split("/");
+                for (let k = 1; k <= parts.length; k++) {
+                    const p = parts.slice(0, k).join("/");
+                    counts.set(p, (counts.get(p) || 0) + 1);
+                }
+            }
+            this.folderSel.innerHTML = "";
+            const add = (value, label) => {
+                const o = el("option");
+                o.value = value;
+                o.textContent = label;
+                this.folderSel.append(o);
+            };
+            add("", `All folders (${catalog.length})`);
+            if (top && counts.size) add("/", `(top level) (${top})`);
+            [...counts.keys()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).forEach((p) => {
+                const parts = p.split("/");
+                add(p.toLowerCase(), "   ".repeat(parts.length - 1) + parts[parts.length - 1] + ` (${counts.get(p)})`);
             });
-            this.list.innerHTML = "";
-            if (!hits.length) {
-                this.list.append(el("div", "ls-empty", catalog && catalog.length ? "No match." : "No LoRAs found."));
+            if (![...this.folderSel.options].some((o) => o.value === prefs.folder)) prefs.folder = "";
+            this.folderSel.value = prefs.folder;
+        }
+
+        filter(keepPlace) {
+            if (!catalog) return;
+            for (const b of this.scope.children) b.classList.toggle("ls-active", b.dataset.scope === prefs.scope);
+            const q = norm(this.search.value.trim());
+            const words = q.split(/\s+/).filter(Boolean);
+            const whole = words.join(" ");
+            this.words = words;
+            this.used = new Set(this.stack.items.map((i) => i.name.toLowerCase()));
+
+            let pool = catalog;
+            if (prefs.scope === "fav") pool = catalog.filter((c) => favorites.has(c._tag));
+            else if (prefs.scope === "recent") pool = recent.map((t) => byTag.get(t)).filter(Boolean);
+            const f = prefs.folder;
+            if (f === "/") pool = pool.filter((c) => !c._folder);
+            else if (f) pool = pool.filter((c) => c._folder === f || c._folder.startsWith(f + "/"));
+
+            const base = prefs.scope === "recent" ? null
+                : prefs.sort === "name" ? (a, b) => a._byName - b._byName
+                    : prefs.sort === "newest" ? (a, b) => (b.mt || 0) - (a.mt || 0) || a._i - b._i
+                        : (a, b) => a._i - b._i;
+            let hits;
+            if (words.length) {
+                const scored = [];
+                for (const c of pool) {
+                    const s = score(c, words, whole);
+                    if (s >= 0) scored.push([s, c]);
+                }
+                scored.sort((a, b) => b[0] - a[0] || (base ? base(a[1], b[1]) : 0));
+                hits = scored.map((x) => x[1]);
+            } else {
+                hits = base ? pool.slice().sort(base) : pool.slice();
+            }
+            this.hits = hits;
+            if (!keepPlace) {
+                this.active = 0;
+                this.list.scrollTop = 0;
+            }
+            this.active = Math.min(this.active, Math.max(hits.length - 1, 0));
+            this.status.textContent = `${hits.length} of ${catalog.length}` +
+                (this.multi ? "  ·  ↑↓ Enter  ·  Shift+Enter / Shift+click: add and keep open" : "  ·  ↑↓ Enter");
+            this.paint(true);
+        }
+
+        paint(force) {
+            const grid = prefs.view === "grid";
+            const n = this.hits.length;
+            const width = this.list.clientWidth || 300;
+            this.cols = grid ? Math.max(1, Math.floor((width - 8) / TILE_W)) : 1;
+            this.rowH = grid ? TILE_H : ROW_H;
+            const rows = Math.ceil(n / this.cols);
+            this.spacer.style.height = rows * this.rowH + "px";
+            this.win.classList.toggle("ls-grid-view", grid);
+            this.win.style.gridTemplateColumns = grid ? `repeat(${this.cols}, minmax(0, 1fr))` : "";
+            if (!n) {
+                this.painted = "";
+                this.win.style.transform = "";
+                this.win.innerHTML = `<div class="ls-empty">${!catalog ? "Loading…"
+                    : !catalog.length ? "No LoRAs found."
+                        : prefs.scope === "fav" && !favorites.size ? "No favorites yet: click ☆ on a LoRA."
+                            : prefs.scope === "recent" && !recent.length ? "Nothing added yet."
+                                : "No match."}</div>`;
                 return;
             }
-            for (const c of hits.slice(0, 300)) {
-                const row = el("button", "ls-pick" + (used.has(String(c.tag).toLowerCase()) ? " ls-used" : ""));
-                row.type = "button";
-                row.title = c.tag + (c.hash ? "  ·  " + c.hash : "");
-                const thumb = el("span", "ls-thumb");
-                if (c.preview) {
-                    const img = el("img");
-                    img.loading = "lazy";
-                    img.src = c.preview;
-                    thumb.append(img);
-                }
-                const text = el("span", "ls-pick-text");
-                text.append(el("span", "ls-pick-name", escapeHtml(c.name)));
+            const h = this.list.clientHeight || 400;
+            const first = Math.max(0, Math.floor(this.list.scrollTop / this.rowH) - 2);
+            const last = Math.min(rows, Math.ceil((this.list.scrollTop + h) / this.rowH) + 2);
+            const key = [first, last, this.cols, grid].join();
+            if (!force && key === this.painted) return;
+            this.painted = key;
+            this.win.style.transform = `translateY(${first * this.rowH}px)`;
+            let html = "";
+            for (let i = first * this.cols; i < Math.min(n, last * this.cols); i++) {
+                const c = this.hits[i];
+                const cls = "ls-pick" + (this.used.has(c._tag) ? " ls-used" : "") + (i === this.active ? " ls-active" : "");
                 const sub = [c.folder, c.sd].filter(Boolean).join("  ·  ");
-                if (sub) text.append(el("span", "ls-pick-sub", escapeHtml(sub)));
-                row.append(thumb, text);
-                row.addEventListener("click", () => {
-                    const cb = this.onPick;
-                    this.close();
-                    if (cb) cb(c);
-                });
-                this.list.append(row);
+                const fav = favorites.has(c._tag);
+                html += `<div class="${cls}" data-i="${i}" title="${escapeHtml(c.tag + (c.hash ? "  ·  " + c.hash : "") + (c.folder ? "\n" + c.folder : ""))}">` +
+                    `<span class="ls-thumb">${c.preview ? `<img loading="lazy" decoding="async" src="${escapeHtml(c.preview)}" alt="">` : ""}</span>` +
+                    `<span class="ls-pick-text"><span class="ls-pick-name">${highlight(c.name, c._n, this.words)}</span>` +
+                    (sub ? `<span class="ls-pick-sub">${escapeHtml(sub)}</span>` : "") + "</span>" +
+                    `<span class="ls-star${fav ? " ls-fav" : ""}" title="${fav ? "Remove from favorites" : "Add to favorites"}">${fav ? "★" : "☆"}</span></div>`;
             }
-            if (hits.length > 300) this.list.append(el("div", "ls-empty", `${hits.length - 300} more: refine the search.`));
+            this.win.innerHTML = html;
+        }
+
+        setActive(i, scroll) {
+            const n = this.hits.length;
+            if (!n) return;
+            i = Math.max(0, Math.min(n - 1, i));
+            if (i !== this.active) {
+                const old = this.win.querySelector(`.ls-pick[data-i="${this.active}"]`);
+                if (old) old.classList.remove("ls-active");
+                this.active = i;
+                const now = this.win.querySelector(`.ls-pick[data-i="${i}"]`);
+                if (now) now.classList.add("ls-active");
+            }
+            if (!scroll) return;
+            const y = Math.floor(i / this.cols) * this.rowH;
+            if (y < this.list.scrollTop) this.list.scrollTop = y;
+            else if (y + this.rowH > this.list.scrollTop + this.list.clientHeight) this.list.scrollTop = y + this.rowH - this.list.clientHeight;
+            this.paint(true);
+        }
+
+        key(e) {
+            const page = Math.max(1, Math.floor(this.list.clientHeight / this.rowH)) * this.cols;
+            const moves = { ArrowDown: this.cols, ArrowUp: -this.cols, PageDown: page, PageUp: -page };
+            if (e.key === "Escape") { e.preventDefault(); this.close(); return; }
+            if (e.target.tagName === "SELECT") return;
+            if (e.key in moves) {
+                e.preventDefault();
+                this.setActive(this.active + moves[e.key], true);
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                this.pick(this.hits[this.active], e.shiftKey || e.ctrlKey);
+            }
+        }
+
+        pick(c, keepOpen) {
+            if (!c) return;
+            noteRecent(c._tag);
+            const cb = this.onPick;
+            if (keepOpen && this.multi) {
+                if (cb) cb(c);
+                this.used.add(c._tag);
+                this.paint(true);
+                this.search.focus();
+                this.search.select();
+                return;
+            }
+            this.close();
+            if (cb) cb(c);
         }
     }
 
@@ -269,7 +570,7 @@
             const bar = el("div", "ls-bar");
             this.addBtn = el("button", "ls-btn ls-add ls-open-picker", ICON.add + "<span>Add LoRA</span>");
             this.addBtn.type = "button";
-            this.addBtn.addEventListener("click", () => this.picker.open((c) => this.add(c)));
+            this.addBtn.addEventListener("click", () => this.picker.open((c) => this.add(c), true));
             this.allBtn = iconButton("all", "Turn every LoRA on / off", "ls-all");
             this.allBtn.addEventListener("click", () => {
                 const on = !this.items.every((i) => i.on);
