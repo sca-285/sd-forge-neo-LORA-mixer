@@ -1082,6 +1082,32 @@
         }
     }
 
+    // ------------------------------------------------------------ send to
+
+    // "Send to img2img / inpaint" copies the prompt box, which never holds the
+    // mixer's LoRAs: copy the list along with it, and switch the mixer on there.
+    function sendTo(from, to) {
+        const a = stacks[from];
+        const b = stacks[to];
+        if (from === to || !a || !b || !a.enabled()) return;
+        const rows = a.items.filter((i) => !i.out).map((i) => ({ ...i, lbw: i.lbw ? i.lbw.slice() : null }));
+        if (!rows.length) return;
+        const box = b.promptBox();
+        const before = box ? box.value : "";
+        const started = Date.now();
+        const apply = () => {
+            // Let the WebUI fill in the new prompt first (or give up waiting: same prompt).
+            if (box && box.value === before && Date.now() - started < 1500) return setTimeout(apply, 100);
+            if (b.busy) return setTimeout(apply, 100);
+            b.split = a.split;
+            b.items = rows;
+            b.change();
+            const real = enabledToggle(to);
+            if (real && !real.checked) real.click();     // its change handler takes any tags from the prompt
+        };
+        setTimeout(apply, 100);
+    }
+
     // --------------------------------------------------------------- boot
 
     function setup() {
@@ -1102,6 +1128,15 @@
             if (box) box.addEventListener("blur", () => setTimeout(() => stack.absorbFromPrompt(), 50));
             const ft = floatToggle(tab);
             if (ft) ft.addEventListener("change", () => stack.float.sync());
+        }
+        for (const from of TABS) {
+            for (const kind of ["img2img", "inpaint"]) {
+                const btn = $(`#${from}_send_to_${kind}`);
+                if (btn && !btn._loraMixer) {
+                    btn._loraMixer = true;
+                    btn.addEventListener("click", () => sendTo(from, "img2img"), true);
+                }
+            }
         }
     }
 

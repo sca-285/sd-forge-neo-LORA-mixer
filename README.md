@@ -68,6 +68,10 @@ git clone https://github.com/sca-285/sd-forge-neo-LORA-mixer.git
 A LoRA that is also typed in the prompt is not added a second time (the console
 says so).
 
+**Send to img2img / inpaint** copies the prompt box, which never holds the
+mixer's LoRAs, so the mixer copies its list to img2img along with it (replacing
+img2img's list) and switches LoRA Mixer on there.
+
 ## Block weights
 
 ### SD 1.x and SDXL
