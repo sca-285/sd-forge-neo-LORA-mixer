@@ -326,6 +326,49 @@ def _filename_for(networks, name):
     return None
 
 
+_NUMBER = re.compile(r"\s*[-+]?(?:\d+\.?\d*|\.\d+)")
+
+
+def _weight_ok(text):
+    try:
+        float(text)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _repair_weights(params_list):
+    """A tag such as <lora:name:1.0.4> (a typo in the prompt) makes the WebUI's
+    float() fail and the whole generation stop. Use the number it starts with
+    (1.0), or 1, and say so in the console."""
+    for params in params_list or []:
+        positional = getattr(params, "positional", None) or []
+        named = getattr(params, "named", None) or {}
+        items = getattr(params, "items", None)
+        fixes = []
+        for i in (1, 2):
+            if i < len(positional) and isinstance(positional[i], str) and "@" not in positional[i] \
+                    and not _weight_ok(positional[i]):
+                old = positional[i]
+                m = _NUMBER.match(old)
+                positional[i] = m.group(0).strip() if m else "1"
+                fixes.append((old, positional[i]))
+                if isinstance(items, list) and old in items:
+                    items[items.index(old)] = positional[i]
+        for key in ("te", "unet"):
+            if key in named and not _weight_ok(named[key]):
+                old = named[key]
+                m = _NUMBER.match(str(old))
+                named[key] = m.group(0).strip() if m else "1"
+                fixes.append((f"{key}={old}", f"{key}={named[key]}"))
+                if isinstance(items, list) and f"{key}={old}" in items:
+                    items[items.index(f"{key}={old}")] = f"{key}={named[key]}"
+        for old, new in fixes:
+            name = positional[0] if positional else "?"
+            print(f"[LoRA Mixer] <lora:{name}:...> has the weight '{old}', which is not a number; "
+                  f"using '{new}'. Fix it in the prompt.")
+
+
 def _wrap_activate(lora_network, networks):
     if getattr(lora_network.activate, "_lora_mixer", False):
         return
@@ -333,6 +376,7 @@ def _wrap_activate(lora_network, networks):
 
     def activate(p, params_list, *args, **kwargs):
         global _last_signature
+        _repair_weights(params_list)
         _specs.clear()
         for params in params_list or []:
             raw = getattr(params, "named", {}).get("lbw")
